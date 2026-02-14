@@ -1,3 +1,10 @@
+# Deprecated code
+old_code/
+3D_model/
+
+# RCI cluster scripts
+sbatch_scripts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
