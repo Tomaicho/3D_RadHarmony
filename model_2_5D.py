@@ -201,6 +201,7 @@ class MURDLoss:
 class MURDTrainer:
     """Trainer with mixed precision and gradient accumulation"""
     def __init__(self, 
+                 experiment_name: str,
                  model: MURD2_5D,
                  epochs:int = 100,
                  num_sites: int = 2,
@@ -210,6 +211,7 @@ class MURDTrainer:
                  use_amp: bool = True,
                  gradient_accumulation_steps: int = 4):
         
+        self.experiment_name = experiment_name
         self.model = model.to(device)
         self.num_sites = num_sites
         self.epochs = epochs
@@ -232,7 +234,7 @@ class MURDTrainer:
             lr=lr, betas=betas
         )
         
-        self.logger = LossLogger(log_dir='logs/murd_2_5d', experiment_name=f'murd_2_5d_v1_{epochs}_epochs')
+        self.logger = LossLogger(log_dir='logs/', experiment_name=experiment_name)
         
         # Save configuration
         config = {
@@ -469,6 +471,7 @@ def main():
     
     # Create trainer
     trainer = MURDTrainer(
+        experiment_name=experiment_name,
         model=model,
         epochs=num_epochs,
         num_sites=num_sites,

@@ -1,3 +1,6 @@
+# Data folder (for now, need to create demo data later)
+data/
+
 # Deprecated code
 old_code/
 3D_model/
