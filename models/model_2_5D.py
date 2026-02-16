@@ -13,13 +13,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from torch.utils.data import Dataset, DataLoader
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
-from typing import List, Dict, Tuple
-import nibabel as nib
+from typing import Dict, Tuple
 
-from logger import LossLogger, create_training_report
+from logger import LossLogger
 import time
 
 from model_2_5D_components import *
@@ -29,7 +27,7 @@ from model_2_5D_components import *
 # COMPLETE MURD MODEL
 # ============================================================================
 
-class MURD2_5D(nn.Module):
+class MURD_2_5D(nn.Module):
     """Complete MURD model for 2.5D slices"""
     def __init__(self, 
                  in_channels: int = 3,  # 2.5D: 3 adjacent slices
@@ -202,7 +200,7 @@ class MURDTrainer:
     """Trainer with mixed precision and gradient accumulation"""
     def __init__(self, 
                  experiment_name: str,
-                 model: MURD2_5D,
+                 model: MURD_2_5D,
                  epochs:int = 100,
                  num_sites: int = 2,
                  lr: float = 1e-4,
@@ -355,177 +353,4 @@ class MURDTrainer:
         return checkpoint
 
 
-# ============================================================================
-# DATASET
-# ============================================================================
 
-class MultiSiteMURD_2_5D_Dataset(Dataset):
-    """
-    Loads 3D volumes into 2.5D slices (3 adjacent slices as channels)
-    """
-    def __init__(self, 
-                 image_paths: Dict[int, List[str]], 
-                 image_size=256):
-        """
-        Args:
-            image_paths: Dictionary mapping site_idx -> list of image paths
-            image_size: Size of 3D images (D, H, W)
-        """
-        self.image_paths = image_paths
-        self.image_size = image_size
-        
-        # Create flat list of (site_idx, path) tuples
-        self.samples = []
-        for site_idx, paths in image_paths.items():
-            for path in paths:
-                # Load volume to get number of slices
-                nii = nib.load(path)
-                volume = nii.get_fdata()
-                
-                # Add each slice (except first and last)
-                for slice_idx in range(1, volume.shape[2] - 1):
-                    self.samples.append((site_idx, path, slice_idx))
-    
-    def __len__(self):
-        return len(self.samples)
-    
-    def __getitem__(self, idx):
-        site_idx, path, slice_idx = self.samples[idx]
-        
-        nii = nib.load(path)
-        volume = nii.get_fdata()
-        
-        # Extract 2.5D slice (3 adjacent slices)
-        slice_2_5d = np.stack([
-            volume[:, :, slice_idx - 1],
-            volume[:, :, slice_idx],
-            volume[:, :, slice_idx + 1]
-        ], axis=0)  # [3, H, W]
-        
-        # Normalization to [-1, 1]
-        slice_2_5d = (slice_2_5d - slice_2_5d.min()) / (slice_2_5d.max() - slice_2_5d.min() + 1e-8)
-        slice_2_5d = slice_2_5d * 2 - 1  # [-1, 1]
-        
-        # Resize to target size
-        slice_tensor = torch.from_numpy(slice_2_5d).float()
-        slice_tensor = F.interpolate(
-            slice_tensor.unsqueeze(0), 
-            size=(self.image_size, self.image_size),
-            mode='bilinear',
-            align_corners=False
-        ).squeeze(0)
-        
-        return {
-            'site': site_idx,
-            'image': slice_tensor
-        }
-
-
-def collate_multisite(batch):
-    """
-    Groups images by site
-    """
-    sites = {}
-    for item in batch:
-        site = item['site']
-        if site not in sites:
-            sites[site] = []
-        sites[site].append(item['image'])
-    
-    # Stack images for each site
-    return {site: torch.stack(images) for site, images in sites.items()}
-
-
-# ============================================================================
-# MAIN TRAINING SCRIPT
-# ============================================================================
-
-def main():
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='MURD 2.5D Inference')
-    parser.add_argument('--experiment_name', type=str, required=True, help='Name of the experiment for logging')
-    parser.add_argument('--num-sites', type=int, default=2, help='Total number of sites')
-    parser.add_argument('--device', type=str, default='cuda', help='Device (cuda/cpu)')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=2, help='Batch size for training')
-    parser.add_argument('--checkpoint-save-frequency', type=int, default=10, help='Frequency of saving checkpoints (epochs)')
-    
-    args = parser.parse_args()
-
-    # Configuration
-    experiment_name = args.experiment_name
-    num_sites = args.num_sites
-    num_epochs = args.epochs
-    batch_size = args.batch_size
-    save_freq = args.checkpoint_save_frequency
-    
-    # Create model
-    model = MURD2_5D(
-        in_channels=3,  # 2.5D input
-        num_sites=num_sites,
-        style_dim=64,
-        latent_dim=16,
-        base_channels=64
-    )
-    
-    # Create trainer
-    trainer = MURDTrainer(
-        experiment_name=experiment_name,
-        model=model,
-        epochs=num_epochs,
-        num_sites=num_sites,
-        lr=1e-4,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
-    )
-    
-    # Define sites/modalities data folders    
-    folder_3T = 'data/3T/train'
-    folder_7T = 'data/7T/train'
-
-    image_paths_3T = [os.path.join(folder_3T, path) for path in os.listdir(folder_3T) if path.endswith('.nii.gz')]
-    image_paths_7T = [os.path.join(folder_7T, path) for path in os.listdir(folder_7T) if path.endswith('.nii.gz')]
-
-    image_paths = {
-        0: image_paths_3T,
-        1: image_paths_7T
-    }
-
-    dataset = MultiSiteMURD_2_5D_Dataset(image_paths, image_size=256)
-    dataloader = DataLoader(
-        dataset, 
-        batch_size=batch_size,
-        shuffle=True,
-        collate_fn=collate_multisite,
-        num_workers=4
-    )
-    
-    # Training loop
-    for epoch in range(num_epochs):
-        print(f"\n{'='*50}")
-        print(f"Epoch {epoch+1}/{num_epochs}")
-        print(f"{'='*50}")
-        
-        avg_losses = trainer.train_epoch(dataloader, epoch)
-        
-        print(f"\nEpoch {epoch+1} Summary:")
-        for k, v in avg_losses.items():
-            print(f"  {k}: {v:.4f}")
-        
-        # Save checkpoint
-        # Create checkpoints directory if it doesn't exist
-        os.makedirs(f'checkpoints/{experiment_name}', exist_ok=True)
-        if (epoch + 1) % save_freq == 0:
-            trainer.save_checkpoint(
-                f'checkpoints/{experiment_name}/_epoch_{epoch+1}.pth',
-                epoch=epoch,
-                losses=avg_losses
-            )
-    
-    print("\nTraining completed!")
-    print("\nGenerating training report...")
-    create_training_report(log_dir='logs/', experiment_name=f'{experiment_name}')
-
-
-if __name__ == '__main__':
-    main()

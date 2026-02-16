@@ -1,10 +1,6 @@
-"""
-Inference module for MURD 2.5D model
-Harmonizes full 3D volumes by processing them slice-by-slice
-"""
-
 import os
 import torch
+from logger import create_training_report
 import torch.nn.functional as F
 import numpy as np
 import nibabel as nib
@@ -12,6 +8,73 @@ from pathlib import Path
 from typing import Optional
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from models.model_2_5D import MURD_2_5D
+
+
+# ===========================================================================
+# UTILS
+
+# ===========================================================================
+# Collate function to group images by site in the dataloader
+
+def collate_multisite(batch):
+    """
+    Groups images by site
+    """
+    sites = {}
+    for item in batch:
+        site = item['site']
+        if site not in sites:
+            sites[site] = []
+        sites[site].append(item['image'])
+    
+    # Stack images for each site
+    return {site: torch.stack(images) for site, images in sites.items()}
+
+
+# ============================================================================
+# TRAINING LOOP
+
+def training_loop(num_epochs:int, experiment_name:str, save_freq:int, trainer, dataloader):
+    # Create checkpoints directory if it doesn't exist
+    os.makedirs(f'checkpoints/{experiment_name}', exist_ok=True)
+
+    best_loss = float('inf')
+    # Training loop
+    for epoch in range(num_epochs):
+        print(f"\n{'='*50}")
+        print(f"Epoch {epoch+1}/{num_epochs}")
+        print(f"{'='*50}")
+        
+        avg_losses = trainer.train_epoch(dataloader, epoch)
+        
+        print(f"\nEpoch {epoch+1} Summary:")
+        for k, v in avg_losses.items():
+            print(f"  {k}: {v:.4f}")
+        
+        # Save if best loss so far
+        epoch_total_loss = sum(avg_losses.values())
+        if epoch_total_loss < best_loss:
+            best_loss = epoch_total_loss
+            trainer.save_checkpoint(
+                f'checkpoints/{experiment_name}/best_model.pth',
+                epoch=epoch,
+                losses=avg_losses
+            )
+            print(f"Best model saved with total loss {best_loss:.4f}")
+
+        # Save checkpoint
+        if (epoch + 1) % save_freq == 0:
+            trainer.save_checkpoint(
+                f'checkpoints/{experiment_name}/_epoch_{epoch+1}.pth',
+                epoch=epoch,
+                losses=avg_losses
+            )
+    
+    print("\nTraining completed!")
+    print("\nGenerating training report...")
+    create_training_report(log_dir='logs/', experiment_name=f'{experiment_name}')
+
 
 
 # ============================================================================
@@ -395,12 +458,11 @@ def load_model_for_inference(
     Returns:
         Loaded MURD2_5D model in eval mode
     """
-    from model_2_5D import MURD2_5D
     
     print(f"Loading model from: {checkpoint_path}")
     
     # Create model
-    model = MURD2_5D(
+    model = MURD_2_5D(
         in_channels=3,
         num_sites=num_sites,
         style_dim=64,
@@ -426,45 +488,3 @@ def load_model_for_inference(
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
     
     return model
-
-
-# ===========================================================================
-# MAIN
-# ===========================================================================
-
-if __name__ == '__main__':
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='MURD 2.5D Inference')
-    parser.add_argument('--checkpoint', type=str, required=True, help='Path to model checkpoint')
-    parser.add_argument('--input', type=str, required=True, help='Input NIfTI file')
-    parser.add_argument('--output-folder', type=str, required=True, help='Output folder')
-    parser.add_argument('--source-site', type=int, required=True, help='Source site index')
-    parser.add_argument('--target-site', type=int, required=True, help='Target site index')
-    parser.add_argument('--num-sites', type=int, default=2, help='Total number of sites')
-    parser.add_argument('--device', type=str, default='cuda', help='Device (cuda/cpu)')
-    parser.add_argument('--reference', type=str, default=None, help='Reference image for style')
-    parser.add_argument('--consistent-style', action='store_true', help='Use consistent style')
-    
-    args = parser.parse_args()
-    
-    # Load model
-    model = load_model_for_inference(
-        checkpoint_path=args.checkpoint,
-        num_sites=args.num_sites,
-        device=args.device
-    )
-    
-    # Harmonize with a reference image (style extracted from reference image)
-    harmonize_volume_2_5d(
-        model=model,
-        nifti_input_path=args.input,
-        output_folder=args.output_folder,
-        source_site=args.source_site,
-        target_site=args.target_site,
-        device=args.device,
-        use_reference=(args.reference is not None),
-        reference_path=args.reference,
-        consistent_style=args.consistent_style,
-        save_visualization=True
-    )
