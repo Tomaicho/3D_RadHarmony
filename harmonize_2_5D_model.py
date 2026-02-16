@@ -438,7 +438,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='MURD 2.5D Inference')
     parser.add_argument('--checkpoint', type=str, required=True, help='Path to model checkpoint')
     parser.add_argument('--input', type=str, required=True, help='Input NIfTI file')
-    parser.add_argument('--output', type=str, required=True, help='Output folder')
+    parser.add_argument('--output-folder', type=str, required=True, help='Output folder')
     parser.add_argument('--source-site', type=int, required=True, help='Source site index')
     parser.add_argument('--target-site', type=int, required=True, help='Target site index')
     parser.add_argument('--num-sites', type=int, default=2, help='Total number of sites')
@@ -459,7 +459,7 @@ if __name__ == '__main__':
     harmonize_volume_2_5d(
         model=model,
         nifti_input_path=args.input,
-        output_folder=args.output,
+        output_folder=args.output_folder,
         source_site=args.source_site,
         target_site=args.target_site,
         device=args.device,
@@ -468,17 +468,3 @@ if __name__ == '__main__':
         consistent_style=args.consistent_style,
         save_visualization=True
     )
-
-    # # Harmonize without reference image (generation of random target site style)
-    # harmonize_volume_2_5d(
-    #     model=model,
-    #     nifti_input_path=args.input,
-    #     output_folder=args.output.replace('reference_image', 'no_reference_image'),
-    #     source_site=args.source_site,
-    #     target_site=args.target_site,
-    #     device=args.device,
-    #     use_reference=(args.reference is not None),
-    #     reference_path=None,
-    #     consistent_style=args.consistent_style,
-    #     save_visualization=True
-    # )

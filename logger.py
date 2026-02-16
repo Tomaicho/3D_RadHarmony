@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -21,7 +22,8 @@ class LossLogger:
             log_dir: Directory to save logs
             experiment_name: Name of experiment (timestamp if None)
         """
-        self.log_dir = Path(log_dir)
+        self.log_dir = os.path.join(log_dir, experiment_name) if experiment_name else log_dir
+        self.log_dir = Path(self.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         if experiment_name is None:
@@ -33,15 +35,15 @@ class LossLogger:
         self.epoch_losses = []  # List of dicts for each epoch
         
         # CSV files
-        self.batch_csv = self.log_dir / f"{experiment_name}_batch_losses.csv"
-        self.epoch_csv = self.log_dir / f"{experiment_name}_epoch_losses.csv"
+        self.batch_csv = self.log_dir / f"batch_losses.csv"
+        self.epoch_csv = self.log_dir / f"epoch_losses.csv"
         
         # Initialize CSV files with headers
         self.batch_csv_initialized = False
         self.epoch_csv_initialized = False
         
         # Config file
-        self.config_file = self.log_dir / f"{experiment_name}_config.json"
+        self.config_file = self.log_dir / f"config.json"
         
         print(f"✓ Loss logger initialized")
         print(f"  Batch log: {self.batch_csv}")
@@ -359,7 +361,8 @@ def create_training_report(log_dir: str, experiment_name: str):
         log_dir: Directory containing logs
         experiment_name: Name of the experiment
     """
-    epoch_csv = Path(log_dir) / f"{experiment_name}_epoch_losses.csv"
+    log_dir = os.path.join(log_dir, experiment_name)
+    epoch_csv = Path(log_dir) / f"epoch_losses.csv"
     
     if not epoch_csv.exists():
         print(f"Error: {epoch_csv} not found!")
@@ -369,7 +372,7 @@ def create_training_report(log_dir: str, experiment_name: str):
     df = pd.read_csv(epoch_csv)
     
     # Create output directory for plots
-    plot_dir = Path(log_dir) / f"{experiment_name}_plots"
+    plot_dir = Path(log_dir) / "plots"
     plot_dir.mkdir(exist_ok=True)
     
     print(f"\n{'='*60}")

@@ -1,6 +1,12 @@
 # Data folder (for now, need to create demo data later)
 data/
 
+# Logs folder
+logs/
+
+# Checkpoints folder
+checkpoints/
+
 # Deprecated code
 old_code/
 3D_model/
