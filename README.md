@@ -14,6 +14,7 @@ Recommended:
 
 ## Preare your data
 Create a folder for your data inside the data/ folder an place it there. Create a subfolder for each site. We recommend to subdivide the data into train and test/inference. The data structure should be something like:
+```
 data
 ├── site_i
 │   ├── test
@@ -29,6 +30,7 @@ data
         ├── 01.nii.gz
         ├── 02.nii.gz
         ├── ...
+```
 
 3D_RadHarmony was optimized for volumes with 256x256xN dimensions. Make sure to prepare your data accordingly, or use the preprocess_folder.py script for preprocessing the selected folders at a time.
 
